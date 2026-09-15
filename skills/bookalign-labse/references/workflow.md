@@ -117,7 +117,8 @@ Use this quick drift check before trusting automatic chapter suggestions:
 Common drift patterns:
 
 - `chapter-iii` contains visible heading text `CHAPTER I`
-- a translated chapter id like `第三章` contains visible heading text `第二章`
+- a translated chapter id like `Chapter 3` contains visible heading text
+  `Chapter 2`
 - `kind_guess` remains `unknown` even when the chapter is clearly contents, chronology, or preface-like material
 
 If you see this pattern, do not align the first suggested match immediately. Inspect adjacent chapter ids on both sides and choose the first pair whose visible body text actually lines up.

@@ -1,112 +1,136 @@
 # BookAlign
 
-BookAlign 用来把一本外语原著 EPUB 和它的正式译本 EPUB 做结构化对齐，再重建成适合对照阅读的双语 EPUB。
+BookAlign structurally aligns an original-language EPUB with its official
+translation, then rebuilds the result as a bilingual EPUB for parallel
+reading.
 
-1. 从原著和译本里抽取正文句段。
-2. 用多语 embedding + 动态规划做局部或章节级对齐。
-3. 保留原书结构，把译文按段落或句子回写到原文 EPUB 里。
+1. Extracts body segments from the original and translated books.
+2. Uses multilingual embeddings and dynamic programming for local or
+   chapter-level alignment.
+3. Preserves the original book structure and writes the translation back by
+   paragraph or sentence.
 
-当前项目主要面向小说阅读场景，尤其是日语原著配中文译本，也支持英语、西语等语言对的基础流程。
+The project currently focuses on fiction, especially Japanese originals with
+Chinese translations, while also supporting basic workflows for English,
+Spanish, and other language pairs.
 
-## 友情链接
+## Related project
 
-[bilingual-epub-toolkit](https://github.com/StarryGuli/bilingual-epub-toolkit) 一位朋友做了相近的 idea，采用了 `Gale-Church` 作为对齐算法，无需 GPU 计算，也实现了不错的效果，并且提供了网站在线服务，推荐学习。
+[bilingual-epub-toolkit](https://github.com/StarryGuli/bilingual-epub-toolkit)
+is a similar project by a friend. It uses Gale-Church alignment without GPU
+computation and provides an online service. It is worth studying as a related
+approach.
 
-## 两种运行方式
+## Two ways to run BookAlign
 
-这个仓库目前同时提供两种运行方式：
+This repository provides two execution paths:
 
-1. 推荐方式：`skills/bookalign-labse`
-2. 直接方式：`uv run bookalign ...` CLI pipeline
+1. Recommended: `skills/bookalign-labse`
+2. Direct: the `uv run bookalign ...` CLI pipeline
 
-推荐优先使用 skill。
+Prefer the skill workflow.
 
-- skill 走的是 review-first 流程，先检查环境、再抽取、再审查章节与正文漂移、再做局部切片对齐，最后再 build
-- skill 已经把当前 production workflow 中最容易出错的环节显式化了，例如 `chapter_id` 一致性自检、`slice_plan`、未对齐段落复查
-- 对脏 EPUB、前后附文混入正文、章节编号漂移、注释/评论并入正文这类真实问题，skill 比一把跑到底的 CLI 更稳
+- The skill uses a review-first process: check the environment, extract both
+  books, inspect chapter and body drift, align local slices, and build only
+  after review.
+- It makes the riskiest parts of the production workflow explicit, including
+  `chapter_id` consistency checks, `slice_plan`, and review of unmatched
+  segments.
+- It is more reliable than a one-shot CLI run for dirty EPUBs, front/back
+  matter mixed into the body, shifted chapter numbering, and notes or comments
+  accidentally included in the text.
 
-CLI pipeline 仍然保留，适合：
+The CLI pipeline remains useful when:
 
-- 输入书籍结构比较干净
-- 你已经知道章节映射大致正确
-- 想快速产出一个初版 EPUB 或对齐 JSON
+- the input books have clean structure;
+- the chapter mapping is already known to be approximately correct; or
+- you want a quick first EPUB or alignment JSON.
 
-## 推荐运行环境
+## Recommended environment
 
-基础环境建议：
+Basic requirements:
 
 - Python `3.12`
 - `uv`
-- 建议优先使用项目虚拟环境或 `uv run`
-- 本地 LaBSE 模型路径，或可用的 `HF_TOKEN`
+- a project virtual environment or `uv run`
+- a local LaBSE model path, or a usable `HF_TOKEN`
 
-对齐后端建议：
+Recommended alignment backends:
 
-- 首选本地 CUDA + 本地 LaBSE 路径
-- 没有 GPU 时可以先做抽取、检查、章节审阅；CPU 也能跑对齐，但速度会明显慢很多
-- 如果不准备本地模型，可以退回 Hugging Face inference，但要显式配置 `HF_TOKEN`
+- Prefer local CUDA with a local LaBSE model.
+- Without a GPU, extraction, inspection, and chapter review can still be done;
+  CPU alignment works but is considerably slower.
+- If no local model is available, use Hugging Face inference only with an
+  explicitly configured `HF_TOKEN`.
 
-显存建议：
+VRAM guidance:
 
-- 经验上，`8 GB+` 显存更适合稳定跑本地 LaBSE 和章节级对齐
-- `4-6 GB` 显存可以尝试较小章节或分 slice 运行，但不建议默认整书直跑
-- 如果只有 CPU，建议使用 skill 的 staged workflow，而不是直接 whole-book CLI
+- `8 GB+` is generally more comfortable for stable local LaBSE and
+  chapter-level alignment.
+- `4-6 GB` may work for small chapters or sliced runs, but is not recommended
+  for whole-book alignment by default.
+- With CPU only, use the staged skill workflow rather than the direct
+  whole-book CLI.
 
-环境自检建议：
+Check the environment with:
 
 ```bash
 uv run python skills/bookalign-labse/scripts/check_environment.py --json
 ```
 
-这会给出：
+The report includes:
 
 - `recommended_backend`
 - `recommended_model_name`
 - `recommended_device`
 - `preferred_local_model`
 
-## 适合什么场景
+## Typical use cases
 
-- 想对照读文学原著，但不想在两个阅读器之间来回切换
-- 想保留正式译本，而不是依赖机翻
-- 想把对齐结果存成 JSON，后续单独调试 builder 或阅读样式
-- 想先人工审查章节与正文漂移，再决定如何 build
+- Read a literary original and its official translation without switching
+  between readers.
+- Preserve a published translation instead of relying on machine translation.
+- Save alignment results as JSON for separate builder or layout debugging.
+- Review chapter and body drift manually before building the final EPUB.
 
-## 安装
+## Installation
 
-项目使用 Python 3.12 和 `uv`。
+The project uses Python 3.12 and `uv`.
 
 ```bash
 uv sync --group dev --group align
 ```
 
-如果你本地已经有 LaBSE，建议显式传本地模型路径，而不是依赖首次在线解析。
+If LaBSE is already available locally, pass its path explicitly rather than
+depending on first-run online model resolution.
 
-## 推荐用法：Skill
+## Recommended usage: skill workflow
 
-如果你在 Codex 环境中使用这个仓库，优先使用：
+When using this repository in an agent environment, prefer:
 
 - [skills/bookalign-labse/SKILL.md](skills/bookalign-labse/SKILL.md)
 
-推荐流程是：
+The recommended process is:
 
-1. 确认 `<python-entry>`、`<skill-root>`、模型路径、是否允许远程推理、artifacts 目录
-2. 运行 `check_environment.py`
-3. 抽取两本书
-4. 检查 `list_book_chapters`、`get_chapter_preview`、`sentence_segments`
-5. 做章节一致性自检
-6. 为 clean slice 制作 `slice_plan`
-7. 分 slice 对齐
-8. 用 `review_unaligned_segments(...)` 复查所有未对齐段落
-9. 导出 review artifact，再 build 最终 EPUB
+1. Confirm `<python-entry>`, `<skill-root>`, the model path, remote inference
+   policy, and the artifacts directory.
+2. Run `check_environment.py`.
+3. Extract both books.
+4. Inspect `list_book_chapters`, `get_chapter_preview`, and
+   `sentence_segments`.
+5. Run a chapter-consistency self-check.
+6. Create a `slice_plan` for clean slices.
+7. Align one slice at a time.
+8. Use `review_unaligned_segments(...)` to inspect all unmatched segments.
+9. Export review artifacts, then build the final EPUB.
 
-完整生产流程见：
+See the complete production workflow:
 
 - [skills/bookalign-labse/references/production-workflow.md](skills/bookalign-labse/references/production-workflow.md)
 
-## 直接用法：CLI Pipeline
+## Direct usage: CLI pipeline
 
-对于结构较干净的书，可以直接运行 CLI pipeline：
+For books with clean structure, run:
 
 ```bash
 uv run bookalign \
@@ -118,14 +142,14 @@ uv run bookalign \
   --model-name /path/to/LaBSE
 ```
 
-这条命令默认就是：
+The defaults are:
 
 - `builder-mode=source_layout`
 - `writeback-mode=paragraph`
 - `layout-direction=horizontal`
 - `device=cuda`
 
-如果你想输出更密集的句子级交错阅读版本：
+For a denser sentence-level interleaved reading version:
 
 ```bash
 uv run bookalign \
@@ -138,7 +162,7 @@ uv run bookalign \
   --writeback-mode inline
 ```
 
-如果你想先保存对齐结果 JSON，后面只调 builder：
+To save alignment JSON for later builder-only work:
 
 ```bash
 uv run bookalign \
@@ -151,7 +175,7 @@ uv run bookalign \
   --alignment-json-output "out/alignment.json"
 ```
 
-后续可直接从 JSON 重建：
+Rebuild later from that JSON:
 
 ```bash
 uv run bookalign \
@@ -163,7 +187,7 @@ uv run bookalign \
   --alignment-json-input "out/alignment.json"
 ```
 
-当前 CLI pipeline 仍然是一个相对直接的 one-shot 流程：
+The CLI remains a relatively direct one-shot pipeline:
 
 ```text
 source EPUB + target EPUB
@@ -173,90 +197,106 @@ source EPUB + target EPUB
 -> EPUB build
 ```
 
-它适合干净输入，但不应替代 skill 的 staged review 工作流。
+It is suitable for clean inputs, but should not replace the staged review
+workflow.
 
-## 效果展示
+## Examples
 
-下面这三张图分别展示《金阁寺》句子级、《金阁寺》段落级，以及《哈利波特》段落级的阅读效果。
+The following images show sentence-level and paragraph-level alignment:
 
 - `docs/images/kinkaku-inline.png`
 - `docs/images/kinkaku-paragraph.png`
 - `docs/images/harry-potter-paragraph.png`
 
-![《金阁寺》句子级对齐](docs/images/kinkaku-inline.png)
-![《金阁寺》段落级对齐](docs/images/kinkaku-paragraph.png)
-![《哈利波特》段落级对齐](docs/images/harry-potter-paragraph.png)
+![Kinkaku-ji sentence-level alignment](docs/images/kinkaku-inline.png)
+![Kinkaku-ji paragraph-level alignment](docs/images/kinkaku-paragraph.png)
+![Harry Potter paragraph-level alignment](docs/images/harry-potter-paragraph.png)
 
-## 当前特性
+## Current features
 
-- 保留原书 spine 顺序和大部分正文结构
-- 支持 `paragraph` 和 `inline` 两种回写方式
-- 保存 `AlignmentResult` 为 JSON，方便复用和调试
-- 对目录、注释、前后附文等非正文做保留，不直接混入正文对齐
-- 支持把目标侧未匹配章节保存在 JSON 中，并单独写入附录页
-- 修复脚注引用与回跳，避免注释页成为死链接
-- 中文译文段落在 build 时默认写入两个空格的段首缩进
-- skill 路径支持 `slice_plan`、未对齐段落复查、review artifact 导出
+- Preserves the source spine order and most of its body structure.
+- Supports `paragraph` and `inline` writeback modes.
+- Saves `AlignmentResult` as JSON for reuse and debugging.
+- Retains TOC entries, notes, and front/back matter instead of mixing them
+  directly into body alignment.
+- Stores unmatched target chapters in JSON and can write them to appendix
+  pages.
+- Rewrites footnote references and backlinks to avoid dead note-page links.
+- Adds two leading spaces to Chinese translation paragraphs during build.
+- Supports `slice_plan`, unmatched-segment review, and review-artifact export
+  through the skill workflow.
 
-## 已知限制
+## Known limitations
 
-- 目前最稳定的组合仍然是日语小说 / 英语小说 -> 中文译本
-- EPUB 本身的格式质量影响很大，脏 TOC、异常脚注、碎片化 XHTML 都会拖累效果
-- CLI 的 whole-book 章节匹配仍然是启发式的，不应把它当作稳定真值
-- `inline` 模式对 source EPUB 结构要求更高，不如 `paragraph` 稳
-- 诗歌、公式、图注、图文混排页面目前不是重点优化对象
-- 依赖 LaBSE 一类多语模型，显存、启动成本和环境准备成本都高于普通脚本工具
+- The most stable combinations are still Japanese or English fiction to
+  Chinese translation.
+- EPUB quality has a major effect: dirty TOCs, unusual footnotes, and
+  fragmented XHTML can all reduce quality.
+- CLI whole-book chapter matching remains heuristic and should not be treated
+  as ground truth.
+- `inline` mode has stricter source EPUB requirements and is less robust than
+  `paragraph` mode.
+- Poetry, formulas, captions, and image-heavy layouts are not current
+  optimization targets.
+- LaBSE-style multilingual models have higher VRAM, startup, and environment
+  costs than ordinary scripts.
 
-## 仓库结构
+## Repository structure
 
 ```text
 bookalign/
-├── align/      # 对齐抽象与 Bertalign 适配
-├── epub/       # EPUB 读取、抽取、CFI、builder
-├── models/     # Segment / AlignmentResult 等共享模型
-├── cli.py      # 命令行入口
-└── pipeline.py # 端到端 one-shot pipeline
+├── align/      # Alignment abstractions and Bertalign adapter
+├── epub/       # EPUB reading, extraction, CFI, and builder
+├── models/     # Shared Segment / AlignmentResult models
+├── cli.py      # Command-line entry point
+└── pipeline.py # End-to-end one-shot pipeline
 
 skills/
-└── bookalign-labse/   # 推荐使用的 review-first skill
+└── bookalign-labse/   # Recommended review-first skill
 
-docs/           # README 配图与补充文档
-scripts/        # 环境与运行时辅助脚本
+docs/           # README images and supplementary documentation
+scripts/        # Environment and runtime helpers
 tests/          # pytest
 ```
 
-## 文档
+## Documentation
 
-- [技术细节、当前路线与已知边界](TECHNICAL.md)
-- [推荐 skill 的 production workflow](skills/bookalign-labse/references/production-workflow.md)
+- [Technical details, current direction, and boundaries](TECHNICAL.md)
+- [Recommended skill production workflow](skills/bookalign-labse/references/production-workflow.md)
 
 ## Acknowledgements
 
-这个项目直接受益于下面这些开源项目：
+This project directly benefits from these open-source projects:
 
-- [Flow](https://github.com/pacexy/flow)：README 和演示里使用的效果图就是用它渲染的
-- [Vecalign](https://github.com/thompsonb/vecalign)：最早是从这个项目开始系统了解文本对齐算法路线
-- [Bertalign](https://github.com/bfsujason/bertalign)：当前 BookAlign 使用的对齐后端
-- [calibre](https://github.com/kovidgoyal/calibre)：提供了 EPUB CFI 相关的重要实现参考
+- [Flow](https://github.com/pacexy/flow): used to render the screenshots in
+  the README and examples.
+- [Vecalign](https://github.com/thompsonb/vecalign): the original source of
+  much of the project's alignment-algorithm exploration.
+- [Bertalign](https://github.com/bfsujason/bertalign): the current alignment
+  backend used by BookAlign.
+- [calibre](https://github.com/kovidgoyal/calibre): an important reference for
+  EPUB CFI behavior.
 
-## 开发
+## Development
 
-运行测试：
+Run the full test suite:
 
 ```bash
 uv run pytest
 ```
 
-只跑核心测试：
+Run the core skill tests:
 
 ```bash
 uv run pytest skills/bookalign-labse/tests/test_service_api.py skills/bookalign-labse/tests/test_builder_refactor.py -q
 ```
 
-## 未来方向
+## Future directions
 
-- 继续收敛 skill-first 的 staged production workflow
-- 改善更多语言对、更多 EPUB 风格下的分句和章节匹配
-- 为局部错位窗口增加更稳的自动修正策略
-- 给 builder 加更细的排版控制与阅读器兼容策略
-- 从离线 EPUB 工具逐步走向阅读器内的对照阅读组件
+- Continue consolidating the skill-first staged production workflow.
+- Improve sentence splitting and chapter matching across more language pairs
+  and EPUB styles.
+- Add more reliable automatic correction for local alignment drift windows.
+- Add finer layout controls and reader-compatibility behavior to the builder.
+- Move from an offline EPUB tool toward an in-reader parallel-reading
+  component.

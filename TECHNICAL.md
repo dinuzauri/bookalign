@@ -1,24 +1,29 @@
-# BookAlign 技术路线
+# BookAlign Technical Direction
 
-本文档说明 BookAlign 当前的实现方式、为什么仓库里同时保留 pipeline 和 skill 两条路径，以及当前推荐的技术路线。
+This document describes BookAlign's current implementation, why the
+repository keeps both a pipeline and a skill workflow, and which direction is
+currently recommended.
 
-## 1. 当前推荐路线
+## 1. Current recommendation
 
-BookAlign 现在有两条实际可用的运行路线：
+BookAlign has two practical execution paths:
 
-1. `bookalign` CLI one-shot pipeline
-2. `skills/bookalign-labse` review-first workflow
+1. The `bookalign` CLI one-shot pipeline.
+2. The `skills/bookalign-labse` review-first workflow.
 
-当前推荐路线是第二条，也就是 skill-first。
+The second path, skill-first, is currently recommended.
 
-原因不是因为 CLI 失效了，而是因为真实 EPUB 的噪声远比“干净平行文本”复杂：
+This is not because the CLI is broken. Real EPUB noise is much more complex
+than clean parallel text:
 
-- front matter 会把正文章节整体推偏
-- `chapter_id` 和 sentence-level record 归属不一定稳定一致
-- 一个 visible chapter 里可能混进注释、评论、目录残留、年谱、附文
-- 有些书只能安全地按 slice 逐段对齐，而不能整章或整书一把跑完
+- front matter can shift all body chapters;
+- `chapter_id` ownership and sentence-level records are not always stable;
+- a visible chapter can contain notes, commentary, leftover TOC text,
+  chronology, or appendices; and
+- some books can only be aligned safely in slices rather than as a whole.
 
-所以当前技术路线已经从“单条 whole-book pipeline”转成：
+The technical direction has therefore changed from a single whole-book
+pipeline:
 
 ```text
 environment check
@@ -31,23 +36,19 @@ environment check
 -> final EPUB build
 ```
 
-CLI pipeline 仍然保留，主要面向：
+The CLI remains useful for clean books, quick experiments, initial alignment
+JSON, and builder-only regression work.
 
-- 输入结构比较干净的书
-- 快速试跑
-- 生成初版 alignment JSON
-- builder-only 回归
-
-## 2. 两条路径的职责边界
+## 2. Responsibilities of the two paths
 
 ### CLI pipeline
 
-CLI 代表仓库里的直接编排路径，核心入口在：
+The direct orchestration path is centered on:
 
 - `bookalign/cli.py`
 - `bookalign/pipeline.py`
 
-它当前仍然是 one-shot 逻辑：
+It remains a one-shot flow:
 
 ```text
 source EPUB + target EPUB
@@ -57,70 +58,74 @@ source EPUB + target EPUB
 -> EPUB build
 ```
 
-这里的章节匹配仍然存在，但应理解为启发式章节建议，而不是 production 级真值层。
+Its chapter matching should be understood as a heuristic suggestion layer, not
+as production-grade ground truth.
 
 ### Skill workflow
 
-推荐 workflow 在：
+The recommended workflow is documented in:
 
 - `skills/bookalign-labse/SKILL.md`
 - `skills/bookalign-labse/references/workflow.md`
 - `skills/bookalign-labse/references/production-workflow.md`
 
-这条路径显式强调：
+It explicitly requires:
 
-- 先问清解释器、模型路径、远程推理策略、artifacts 目录
-- 先做环境检查，再决定 backend
-- 先看章节，再信任 `chapter_id`
-- 先做一致性自检，再决定是否按 chapter 对齐
-- 只有 clean slice 才进入 production build
+- confirming the interpreter, model path, remote inference policy, and
+  artifacts directory;
+- checking the environment before choosing a backend;
+- inspecting chapters before trusting `chapter_id`;
+- running a consistency self-check before chapter alignment; and
+- sending only clean slices to production building.
 
-这也是当前更符合真实书籍数据的工程路线。
+This is the workflow that best matches real-world book data.
 
-## 3. 核心数据模型
+## 3. Core data model
 
 ### `Segment`
 
-定义位置：
+Defined in:
 
 - `bookalign/models/types.py`
 
-`Segment` 是整个系统里的最小工作单元。它既是对齐输入，也是回写定位锚点。
+`Segment` is the smallest working unit in the system. It is both an alignment
+input and a positional anchor for writeback.
 
-关键字段：
+Important fields:
 
-- `text`: 当前句段或段落文本
-- `cfi`: 当前单元的 EPUB CFI
-- `paragraph_cfi`: 所属段落锚点
-- `chapter_idx / paragraph_idx / sentence_idx`: 结构位置
-- `raw_html`: 原始块级 HTML
-- `text_start / text_end`: 句子在段落中的字符范围
-- `has_jump_markup / jump_fragments / is_note_like`: 注释与超链接元数据
-- `alignment_role`: `align` 或 `retain`
-- `paratext_kind`: `body / toc / note_body / chapter_heading / frontmatter / backmatter / metadata / unknown`
-- `filter_reason`: 启发式判定原因
+- `text`: sentence or paragraph text;
+- `cfi`: EPUB CFI for the unit;
+- `paragraph_cfi`: containing paragraph anchor;
+- `chapter_idx / paragraph_idx / sentence_idx`: structural position;
+- `raw_html`: original block-level HTML;
+- `text_start / text_end`: sentence character range within its paragraph;
+- `has_jump_markup / jump_fragments / is_note_like`: note and hyperlink
+  metadata;
+- `alignment_role`: `align` or `retain`;
+- `paratext_kind`: `body / toc / note_body / chapter_heading / frontmatter / backmatter / metadata / unknown`;
+- `filter_reason`: heuristic classification reason.
 
 ### `AlignmentResult`
 
-`AlignmentResult` 是抽取与 builder 之间的稳定中间层。
+`AlignmentResult` is the stable intermediate layer between extraction and the
+builder.
 
-关键字段：
+Important fields:
 
-- `pairs`: 对齐后的 `AlignedPair[]`
-- `source_lang / target_lang`
-- `granularity`
-- `extract_mode`
-- `retained_source_segments`
-- `retained_target_segments`
+- `pairs`: aligned `AlignedPair[]`;
+- `source_lang / target_lang`;
+- `granularity`;
+- `extract_mode`;
+- `retained_source_segments`;
+- `retained_target_segments`.
 
-现在它除了保存已对齐内容，还承担两类重要职责：
+In addition to aligned content, it stores one-sided pairs for later review and
+serves as the builder-only debugging input so the model does not need to be
+rerun.
 
-- 保存未对齐的单边 pair，供后续 review
-- 作为 builder-only 调试输入，避免反复重跑模型
+## 4. EPUB extraction
 
-## 4. EPUB 抽取
-
-相关模块：
+Relevant modules:
 
 - `bookalign/epub/reader.py`
 - `bookalign/epub/tag_filters.py`
@@ -128,63 +133,68 @@ source EPUB + target EPUB
 - `bookalign/epub/cfi.py`
 - `bookalign/epub/sentence_splitter.py`
 
-当前抽取策略是 `filtered_preserve`。
+The current extraction strategy is `filtered_preserve`.
 
-它不会把所有可见文本一股脑塞给对齐器，而是先做粗分类：
+It does not send every visible text fragment to the aligner. It first
+classifies content:
 
-- 正文：进入 `alignment_segments`
-- 目录、注释正文、章节标题、前后附文等：进入 `retained_segments`
+- body text enters `alignment_segments`;
+- TOC entries, notes, chapter headings, and front/back matter enter
+  `retained_segments`.
 
-抽取阶段还会做几件关键事情：
+Extraction also:
 
-- 生成段落级和句子级 CFI
-- 保留原始 HTML 片段供 builder 尽量复原
-- 记录脚注引用、回跳链接和锚点信息
-- 为句子保留其在段落中的范围，方便 inline 模式重建
+- generates paragraph- and sentence-level CFIs;
+- preserves original HTML so the builder can restore structure where possible;
+- records footnote references, backlinks, and anchor metadata; and
+- stores sentence ranges within paragraphs for inline reconstruction.
 
-## 5. 章节匹配已经不是唯一锚点
+## 5. Chapter matching is no longer the only anchor
 
-这是当前路线里最重要的变化之一。
+This is one of the most important changes in the current workflow.
 
-早期可以把章节匹配理解成：
+Previously, chapter matching could be viewed as:
 
 ```text
-抽章节 -> 章节对齐 -> 句子对齐
+extract chapters -> match chapters -> align sentences
 ```
 
-但现在不能再把 `chapter_id` 当作绝对稳定锚点。
+Now `chapter_id` must not be treated as an absolute anchor.
 
-实际问题包括：
+Real problems include:
 
-- `list_book_chapters(...)` 看到的 chapter 和 sentence record 归属可能漂移
-- 一个 `chapter_id` 内可能并进多个正文部分
-- 段落索引在同一个 visible chapter bucket 内可能重置
-- front matter / chronology / note block 可能混进正文段
+- the chapter shown by `list_book_chapters(...)` may not match the ownership of
+  sentence records;
+- one `chapter_id` may contain multiple body regions;
+- paragraph indexes may reset within a visible chapter bucket; and
+- front matter, chronology, or note blocks may be mixed into body segments.
 
-因此当前推荐做法是：
+The recommended process is:
 
-1. 先看 `list_book_chapters(...)`
-2. 再看 `get_chapter_preview(...)`
-3. 再看 `get_chapter_structure(...)`
-4. 再抽样 `sentence_segments`
-5. 只有这几个视图一致时，才让章节信息进入正式切片计划
+1. Inspect `list_book_chapters(...)`.
+2. Inspect `get_chapter_preview(...)`.
+3. Inspect `get_chapter_structure(...)`.
+4. Sample `sentence_segments`.
+5. Add chapter information to the formal slice plan only when these views
+   agree.
 
-换句话说，章节匹配现在更像“候选建议层”，不是最终执行层。
+Chapter matching is therefore a candidate-suggestion layer, not the final
+execution layer.
 
-## 6. 对齐层
+## 6. Alignment layer
 
-正文对齐仍然由 Bertalign 路线负责，封装在：
+Body alignment still uses the Bertalign path, wrapped in:
 
 - `bookalign/align/bertalign_adapter.py`
 - `bookalign/align/aligner.py`
 
-它的基础能力仍然是：
+Its core capabilities are:
 
-- 多语句向量模型
-- embedding 相似度
-- 动态规划对齐
+- multilingual sentence embeddings;
+- embedding similarity; and
+- dynamic-programming alignment.
 
-支持：
+It supports:
 
 - `1-1`
 - `1-N`
@@ -192,29 +202,31 @@ source EPUB + target EPUB
 - `N-M`
 - `1-0 / 0-1`
 
-这仍然比“每句检索最像的一句”稳得多，尤其适合文学翻译中的拆句、并句、增补和省略。
+This is more reliable than retrieving the single most similar sentence,
+especially for literary translations with splits, merges, additions, and
+omissions.
 
-当前工程变化主要不在算法核，而在执行边界：
+The main engineering change is the execution boundary:
 
-- 不再默认整书隐式配对
-- production 路径要求显式 `slice_plan`
-- 一轮结束后要求直接复查未对齐段落
+- whole-book implicit pairing is no longer the default;
+- production requires an explicit `slice_plan`; and
+- unmatched segments must be reviewed after each alignment round.
 
-## 7. 为什么要保留 JSON 与 review artifact
+## 7. Why JSON and review artifacts are retained
 
-对齐阶段最贵，人工判断最容易反复发生，builder 调整又最频繁。
+Alignment is expensive, human judgment often needs to be repeated, and builder
+changes are frequent. Persisting intermediate artifacts is therefore part of
+the current design, not an optional convenience.
 
-所以 BookAlign 把中间产物显式保存下来，是当前路线的一部分，而不是附带功能。
+Artifacts make it possible to:
 
-保留这些 artifact 的直接好处：
+- change styles or builder behavior without rerunning the model;
+- inspect suspicious alignment windows independently;
+- separate alignment problems from reconstruction problems;
+- review unmatched regions separately; and
+- create a review checkpoint before building.
 
-- 改样式或 builder 逻辑时，不必重新跑模型
-- 可以单独分析错位窗口
-- 可以把“对齐问题”和“重建问题”拆开调试
-- 可以把未对齐区域单独抽出来复看
-- 可以在 build 前形成 review checkpoint
-
-当前比较重要的 artifact 包括：
+Important artifacts include:
 
 - `source_extraction.json`
 - `target_extraction.json`
@@ -223,139 +235,145 @@ source EPUB + target EPUB
 - `alignment_report.json`
 - `review.html`
 
-## 8. Builder 路线
+## 8. Builder design
 
-相关模块：
+Relevant modules:
 
 - `bookalign/epub/builder.py`
 - `bookalign/pipeline.py`
 
-目前有两种主要输出思路：
+There are two main output strategies:
 
-- `simple`: 重新生成一本文本块式双语 EPUB
-- `source_layout`: 基于原著 EPUB 结构回写译文
+- `simple`: generate a new block-oriented bilingual EPUB;
+- `source_layout`: write the translation back into the original EPUB
+  structure.
 
-公开使用时更推荐 `source_layout`，因为阅读体验更自然，也更符合这个项目的目标。
+`source_layout` is preferred for public use because it produces a more natural
+reading experience and better matches the project's goal.
 
-### `paragraph` 模式
+### `paragraph` mode
 
-把译文按段落写回到原段后面。
+Writes the translation after each source paragraph.
 
-优点：
+Advantages:
 
-- 更稳
-- 对 source EPUB 结构破坏更小
-- 对阅读器兼容性更好
+- more robust;
+- less destructive to the source EPUB structure; and
+- better reader compatibility.
 
-缺点：
+Disadvantage:
 
-- 译文颗粒度较粗
+- translation granularity is coarser.
 
-### `inline` 模式
+### `inline` mode
 
-在原 block 内做“原句 -> 译句”交错回写。
+Rewrites each source block with interleaved source and target sentences.
 
-优点：
+Advantages:
 
-- 对照最紧密
-- 更适合语言学习和细读
+- the closest source/translation pairing;
+- better for language learning and close reading.
 
-缺点：
+Disadvantages:
 
-- 更依赖句内定位和段内结构
-- 更容易被脏 EPUB 样式、嵌套标签和异常换行拖坏
+- depends more heavily on sentence and paragraph position data; and
+- is more sensitive to dirty EPUB styles, nested tags, and unusual line breaks.
 
-### 当前 builder 的新增默认行为
+### Current builder default
 
-当前中文译文段落在 build 时默认写入两个空格的段首缩进。
+Chinese translation paragraphs receive two leading spaces during build. This
+is an explicit reading-layout choice rather than only a CSS visual indent.
 
-这是一个明确的阅读排版选择，不再只是 CSS 视觉缩进。
+## 9. Notes, retained content, and unmatched segments
 
-## 9. 注释、retained 内容与未对齐段落
+This is the builder's most difficult layer and a major reason for the
+skill-first workflow.
 
-这是 builder 最麻烦的一层，也是 skill-first 路线存在的重要原因。
+Current rules:
 
-当前处理原则是：
+- note bodies do not participate in body alignment;
+- retained content remains in JSON;
+- the builder writes notes and other retained content to separate XHTML
+  documents;
+- note references in the body are rewritten as clickable footnote markers; and
+- backlinks in note pages point to anchors in the rebuilt body where possible.
 
-- 注释正文不参与正文对齐
-- retained 内容仍然保存在 JSON 里
-- builder 会把注释和其他 retained 内容分别写入附加 XHTML
-- 正文中的注释引用会被改写成可点击的脚注标记
-- 注释页中的回跳链接会指回重建后的正文锚点
+After an alignment round, do not inspect only the summary. Inspect:
 
-另外，一轮对齐后不再只看 summary，而要显式看：
+- source-only pairs;
+- target-only pairs; and
+- consecutive unmatched regions.
 
-- 哪些 pair 只有 source 没有 target
-- 哪些 pair 只有 target 没有 source
-- 哪些 unmatched pair 连成了连续区域
+This is why APIs such as `review_unaligned_segments(...)` exist.
 
-这也是 `review_unaligned_segments(...)` 这类接口存在的原因。
+## 10. Current limitations
 
-## 10. 当前不足
+### EPUB health has a large effect
 
-### EPUB 格式健康度影响太大
+Real EPUBs are often messy. Common problems include:
 
-现实里的 EPUB 非常脏。
+- empty TOC links;
+- inconsistent note DOM structures;
+- chapters split into many spans;
+- paragraphs and line breaks used inconsistently; and
+- introductions, appendices, and metadata mixed into body content.
 
-常见问题包括：
+Much of the engineering effort therefore goes into input compatibility rather
+than alignment-algorithm optimization.
 
-- TOC 空链接
-- 注释 DOM 结构极不统一
-- 把一整章打碎成大量 span
-- 段落和换行混用
-- 大量与正文混杂的导读、附录、元数据
+### Language coverage is still limited
 
-所以当前大量工程时间花在兼容这些输入，而不是单纯优化对齐算法。
+The most stable combinations are:
 
-### 语言覆盖还不够宽
+- Japanese original to Chinese translation;
+- English original to Chinese translation.
 
-现在最稳定的是：
+The Spanish path works, but is less stable than the two combinations above.
 
-- 日文原著 -> 中文译本
-- 英文原著 -> 中文译本
+### Literary text is not regular parallel data
 
-西语链路已经能跑，但仍不如前两者稳。
+Literary translations commonly include:
 
-### 文学文本天生不是规整并行语料
+- sentence splitting;
+- sentence merging;
+- inversion;
+- explanatory additions; and
+- rhetorical substitutions.
 
-文学译本里很常见：
+Sentence-level alignment is therefore not an absolute ground truth. It
+approximates a readable result.
 
-- 拆句
-- 合句
-- 倒装
-- 解释性增译
-- 修辞替换
+### The CLI whole-book pipeline is still optimistic
 
-所以“句子级”从来不是绝对稳定的金标准，只能逼近一个可阅读结果。
+Although the CLI continues to work, it should not be the production default.
+If a book has chapter drift, mixed content, commentary blocks, or index resets,
+one-shot whole-book execution remains risky.
 
-### CLI whole-book pipeline 仍然过于乐观
+## 11. Future direction
 
-即使当前 CLI 还能工作，也不适合承担 production 默认入口。
+### Continue strengthening staged production
 
-如果输入书本存在章节漂移、混合正文、评论块或索引重置，whole-book 直跑的风险仍然很高。
+The most valuable next improvements are:
 
-## 11. 后续方向
+- more reliable drift and mixed-content preflight checks;
+- clearer slice-planning capabilities;
+- automatic anomaly scans before building; and
+- better organization of review artifacts.
 
-### 继续加强 staged production
+### Improve reader compatibility
 
-接下来更值得继续做的是：
+Potential improvements include:
 
-- 更稳的 drift / mixed-content 预检
-- 更清晰的 slice planning 表达能力
-- builder 前的自动异常扫描
-- 更好的 review artifact 组织方式
+- finer indentation and paragraph-spacing controls;
+- consistent note styling;
+- dark-mode and additional reader compatibility testing; and
+- dedicated handling for images, captions, and poetry.
 
-### 更好的阅读器适配
+### Move toward a reader component
 
-后面值得补的方向包括：
+The longer-term direction is a reader-integrated parallel-reading experience
+rather than only an offline EPUB export.
 
-- 更细的缩进与段间距策略
-- 注释样式统一
-- 深色模式与更多阅读器兼容性测试
-- 对图片、图注、诗歌等页面的专门处理
-
-### 从离线工具走向阅读器组件
-
-这仍然是更合理的长期方向。
-
-当前仓库已经证明“正式译本 + 原著 + 自动对齐 + EPUB 重建”是可落地的；下一阶段更合理的形态，应当是阅读器里的对照阅读能力，而不只是导出一个离线 EPUB。
+The repository has already shown that official translation plus original text,
+automatic alignment, and EPUB reconstruction are viable. The next natural
+form is a parallel-reading component inside a reader.

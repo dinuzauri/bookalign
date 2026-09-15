@@ -180,7 +180,8 @@ Before aligning, verify likely body-start chapters by combining:
 Useful practical signals:
 
 - a chapter id like `chapter-iii` may still contain visible text `CHAPTER I`
-- a translated chapter id like `第三章` may contain visible heading text `第二章`
+- a translated chapter id like `Chapter 3` may contain visible heading text
+  `Chapter 2`
 - `kind_guess` is helpful, but not authoritative for separating body text from contents, chronology, or appendix-like material
 
 If the first suggested match looks structurally wrong, inspect neighboring chapters before aligning anything.
